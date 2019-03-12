@@ -1,0 +1,4 @@
+[submodule "egalito"]
+	path = egalito
+	url = git@github.com:columbia/egalito.git
+	branch = merging
