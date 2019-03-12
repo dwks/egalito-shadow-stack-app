@@ -1,24 +1,29 @@
 #ifndef EGALITO_APP_H
 #define EGALITO_APP_H
 
-#include "conductor/setup.h"
+#include "conductor/interface.h"
 
 class AppOptions {
 private:
-    bool debugMessages = false;
+    bool debugMessages;
+    bool recursive;
 public:
+    AppOptions() : debugMessages(true), recursive(true) {}
     bool getDebugMessages() const { return debugMessages; }
+    bool getRecursive() const { return recursive; }
 
     void setDebugMessages(bool d) { debugMessages = d; }
+    void setRecursive(bool r) { recursive = r; }
 };
 
 class App {
 private:
     AppOptions options;
-    ConductorSetup setup;
+    EgalitoInterface *egalito;
 public:
-    void parse(const char *filename);
-    void extract();
+    void parse(const std::string &filename);
+    void processProgram();
+    void generate(const std::string &output);
     AppOptions &getOptions() { return options; }
 };
 

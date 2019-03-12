@@ -9,35 +9,64 @@
 #include "log/registry.h"
 #include "log/temp.h"
 
-void App::parse(const char *filename) {
-    std::cout << "file [" << filename << "]\n";
+void App::parse(const std::string &filename) {
+    std::cout << "Parsing file [" << filename << "]\n";
 
-    if(!options.getDebugMessages()) {
-        // Note: once we disable messages, we never re-enable them.
-        // Right now the old settings aren't saved so it's not easy to do.
-        GroupRegistry::getInstance()->muteAllSettings();
-    }
+    // Set logging levels according to quiet and EGALITO_DEBUG env var.
+    egalito = new EgalitoInterface(/*verboseLogging=*/ options.getDebugMessages(),
+        /*useLoggingEnvVar=*/ true);
 
+    // Parsing ELF files can throw exceptions.
     try {
-        if(ElfMap::isElf(filename)) {
-            const bool recursive = true;
-            const bool includeEgalitoLib = false;
-            setup.parseElfFiles(filename, recursive, includeEgalitoLib);
-        }
-        else {
-            setup.parseEgalitoArchive(filename);
-        }
+        egalito->initializeParsing();  // Creates Conductor and Program
+
+        // Parse a filename; if second arg is true, parse shared libraries
+        // recursively. This parse() can be called repeatedly to inject other
+        // dependencies, and the recursive closure can be parsed with
+        // parseRecursiveDependencies() at any later stage.
+        egalito->parse(filename, options.getRecursive());
     }
     catch(const char *message) {
         std::cout << "Exception: " << message << std::endl;
     }
 }
 
+void App::processProgram() {
+    auto program = egalito->getProgram();
+    // ... analyze or transform the program
+
+    // example:
+    std::cout << "Final parsing results:\n";
+    for(auto module : CIter::children(program)) {
+        std::cout << "    parsed Module " << module->getName() << std::endl;
+    }
+    for(auto library : CIter::children(egalito->getLibraryList())) {
+        std::cout << "    depends on Library " << library->getName()
+            << " [" << library->getResolvedPath() << "]" << std::endl;
+    }
+
+    if(program->getEntryPoint()) {
+        std::cout << "Dump of entry point:\n";
+        egalito->dump(program->getEntryPoint());
+    }
+}
+
+void App::generate(const std::string &output) {
+    // Generate output, mirrorgen or uniongen. If only one argument is
+    // given to generate(), automatically guess based on whether multiple
+    // Modules are present.
+    std::cout << "Performing code generation into [" << output << "]...\n";
+    egalito->generate(output);
+}
+
 void printUsage(const char *program) {
-    std::cout << "Egalito app" << std::endl;
-    std::cout << "Usage: " << program << " [-vq]" << std::endl;
+    std::cout << "Egalito example app" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Usage: " << program << " [-vq] input [output]" << std::endl;
     std::cout << "\t-v: be more verbose" << std::endl;
     std::cout << "\t-q: be less verbose" << std::endl;
+    std::cout << "\t-r: parse recursively" << std::endl;
+    std::cout << "\t-1: parse non-recursively" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -56,12 +85,10 @@ int main(int argc, char *argv[]) {
         std::function<void (AppOptions &)> action;
     } actions[] = {
         // should we show debugging log messages?
-        {"-v", [] (AppOptions &options) {
-            options.setDebugMessages(true);
-        }},
-        {"-q", [] (AppOptions &options) {
-            options.setDebugMessages(false);
-        }},
+        {"-v", [] (AppOptions &options) { options.setDebugMessages(true); }},
+        {"-q", [] (AppOptions &options) { options.setDebugMessages(false); }},
+        {"-r", [] (AppOptions &options) { options.setRecursive(true); }},
+        {"-1", [] (AppOptions &options) { options.setRecursive(false); }},
     };
 
     App app;
@@ -81,7 +108,16 @@ int main(int argc, char *argv[]) {
             }
         }
         else {
+            // 1. Parse input.
             app.parse(arg);
+
+            // 2. Analyze or transform the program.
+            app.processProgram();
+
+            // 3. (optional) Generate a new output ELF.
+            if(a+1 < argc) {
+                app.generate(argv[++a]);
+            }
         }
     }
     
