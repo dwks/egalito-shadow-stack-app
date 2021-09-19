@@ -1,6 +1,7 @@
 #include <iostream>
 #include <functional>
 #include <cstring>  // for std::strcmp
+#include <cstdlib>  // for std::exit
 #include "app.h"
 #include "shadowstack.h"
 
@@ -11,22 +12,18 @@
 #include "log/temp.h"
 
 void App::parse(const std::string &filename) {
-    std::cout << "Initializing Egalito\n";
-
     // Set logging levels according to quiet and EGALITO_DEBUG env var.
-    egalito = new EgalitoInterface(/*verboseLogging=*/ options.getDebugMessages(),
+    egalito = new EgalitoInterface(/*verboseLogging=*/ this->verboseLogging,
         /*useLoggingEnvVar=*/ true);
 
     // Parsing ELF files can throw exceptions.
     try {
         egalito->initializeParsing();  // Creates Conductor and Program
 
-        // Parse a filename; if second arg is true, parse shared libraries
-        // recursively. This parse() can be called repeatedly to inject other
-        // dependencies, and the recursive closure can be parsed with
-        // parseRecursiveDependencies() at any later stage.
+        // Parse the given input file, end all shared library dependencies,
+        // recursively.
         std::cout << "Parsing file [" << filename << "]\n";
-        egalito->parse(filename, options.getRecursive());
+        egalito->parse(filename, /*recursiveDependencies=*/ true);
 
         // Add our injected code.
         std::cout << "Injecting code from our library\n";
@@ -34,6 +31,7 @@ void App::parse(const std::string &filename) {
     }
     catch(const char *message) {
         std::cout << "Exception: " << message << std::endl;
+        std::exit(1);
     }
 }
 
@@ -59,59 +57,43 @@ void App::generate(const std::string &output) {
     egalito->generate(output);
 }
 
-void printUsage(const char *program) {
+void App::printUsage(const char *program) {
     std::cout << "Egalito shadow stack app" << std::endl;
     std::cout << std::endl;
     std::cout << "Usage: " << program << " [-vq] input [output]" << std::endl;
     std::cout << "\t-v: be more verbose" << std::endl;
     std::cout << "\t-q: be less verbose" << std::endl;
-    std::cout << "\t-r: parse recursively" << std::endl;
-    std::cout << "\t-1: parse non-recursively" << std::endl;
 }
 
-int main(int argc, char *argv[]) {
+int App::run(int argc, char *argv[]) {
     if(argc <= 1) {
         printUsage(argv[0] ? argv[0] : "etapp");
         return 0;
     }
 
-    struct {
-        const char *str;
-        std::function<void (AppOptions &)> action;
-    } actions[] = {
-        // should we show debugging log messages?
-        {"-v", [] (AppOptions &options) { options.setDebugMessages(true); }},
-        {"-q", [] (AppOptions &options) { options.setDebugMessages(false); }},
-        {"-r", [] (AppOptions &options) { options.setRecursive(true); }},
-        {"-1", [] (AppOptions &options) { options.setRecursive(false); }},
-    };
-
-    App app;
     for(int a = 1; a < argc; a ++) {
         const char *arg = argv[a];
-        if(arg[0] == '-') {
-            bool found = false;
-            for(auto action : actions) {
-                if(std::strcmp(arg, action.str) == 0) {
-                    action.action(app.getOptions());
-                    found = true;
-                    break;
-                }
-            }
-            if(!found) {
-                std::cout << "Warning: unrecognized option \"" << arg << "\"\n";
-            }
+        if(std::strcmp(arg, "-v") == 0) {
+            verboseLogging = true;
+        }
+        else if(std::strcmp(arg, "-q") == 0) {
+            verboseLogging = false;
         }
         else {
-            app.parse(arg);
+            parse(arg);
 
-            app.transform();
+            transform();
 
             if(a+1 < argc) {
-                app.generate(argv[++a]);
+                generate(argv[++a]);
             }
         }
     }
     
     return 0;
+}
+
+int main(int argc, char *argv[]) {
+    App app;
+    return app.run(argc, argv);
 }
