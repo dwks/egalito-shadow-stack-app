@@ -33,10 +33,14 @@ void App::parse(const std::string &filename) {
 }
 
 void App::processProgram() {
-    auto program = egalito->getProgram();
     // ... analyze or transform the program
 
-    RUN_PASS(ShadowStackPass(), program);
+    egalito->parse("libcet.so");
+    auto program = egalito->getProgram();
+
+    std::cout << "Adding shadow stack...\n";
+    ShadowStackPass shadowStack(ShadowStackPass::MODE_CONST);
+    program->accept(&shadowStack);
 
     // example:
     std::cout << "Final parsing results:\n";
