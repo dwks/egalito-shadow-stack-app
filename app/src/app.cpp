@@ -35,7 +35,7 @@ void App::parse(const std::string &filename) {
 void App::processProgram() {
     // ... analyze or transform the program
 
-    egalito->parse("libcet.so");
+    egalito->parse("libinject.so");
     auto program = egalito->getProgram();
 
     std::cout << "Adding shadow stack...\n";

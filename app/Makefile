@@ -3,7 +3,7 @@
 include ../egalito/env.mk
 
 ETAPP = $(BUILDDIR)etapp
-CET_LIBRARY = $(BUILDDIR)libcet.so
+INJECT_LIBRARY = $(BUILDDIR)libinject.so
 
 CFLAGS      += -g -I ../egalito/src/
 CXXFLAGS    += -g -I ../egalito/src/
@@ -20,15 +20,15 @@ dep-filename = $(foreach s,$1,$(BUILDDIR)$(dir $s)$(basename $(notdir $s)).d)
 
 ETAPP_SOURCES = $(APP_SOURCES)
 ETAPP_OBJECTS = $(call obj-filename,$(ETAPP_SOURCES))
-LIBCET_SOURCES = $(INJECT_SOURCES)
-LIBCET_OBJECTS = $(call obj-filename,$(LIBCET_SOURCES))
+LIBINJECT_SOURCES = $(INJECT_SOURCES)
+LIBINJECT_OBJECTS = $(call obj-filename,$(LIBINJECT_SOURCES))
 
-ALL_SOURCES = $(sort $(ETAPP_SOURCES) $(LIBCET_SOURCES))
+ALL_SOURCES = $(sort $(ETAPP_SOURCES) $(LIBINJECT_SOURCES))
 ALL_OBJECTS = $(call obj-filename,$(ALL_SOURCES))
 
 BUILDTREE = $(sort $(dir $(ALL_OBJECTS)))
 
-OUTPUTS = $(ETAPP) $(CET_LIBRARY)
+OUTPUTS = $(ETAPP) $(INJECT_LIBRARY)
 
 # Default target
 .PHONY: all
@@ -52,7 +52,7 @@ $(BUILDTREE): ../egalito/config/config.h
 	@touch .symlinks
 	@echo "LN-S" $(OUTPUTS)
 	@ln -sf $(ETAPP)
-	@ln -sf $(CET_LIBRARY)
+	@ln -sf $(INJECT_LIBRARY)
 	@ln -sf $(shell pwd)/../egalito/src/$(BUILDDIR)libegalito.so $(BUILDDIR)libegalito.so
 
 .PHONY: rebuild-src
@@ -72,10 +72,10 @@ $(ETAPP): ../egalito/src/$(BUILDDIR)libegalito.so
 
 $(BUILDDIR)inject/%.o: inject/%.c
 	$(SHORT_CC) $(CCFLAGS) -fPIC $(DEPFLAGS) -c -o $@ $<
-$(CET_LIBRARY): $(LIBCET_OBJECTS)
-	$(SHORT_LINK) -shared -fPIC -Wl,-soname,libcet.so $^ -o $@
+$(INJECT_LIBRARY): $(LIBINJECT_OBJECTS)
+	$(SHORT_LINK) -shared -fPIC -Wl,-soname,libinject.so $^ -o $@
 
 # Other targets
 .PHONY: clean realclean
 clean:
-	-rm -rf $(BUILDDIR) .symlinks etapp libcet.so
+	-rm -rf $(BUILDDIR) .symlinks etapp libinject.so
