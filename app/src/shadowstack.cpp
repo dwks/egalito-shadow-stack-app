@@ -12,8 +12,7 @@
 
 void ShadowStackPass::visit(Program *program) {
     auto allocateFunc = ChunkFind2(program).findFunction(
-        mode == MODE_GS ? "egalito_allocate_shadow_stack_gs"
-        : "egalito_allocate_shadow_stack_const");
+        "egalito_allocate_shadow_stack");
 
     if(allocateFunc) {
         SwitchContextPass switchContext;
@@ -68,10 +67,8 @@ void ShadowStackPass::visit(Module *module) {
 }
 
 void ShadowStackPass::visit(Function *function) {
-    if(function->getName() == "egalito_endbr_violation") return;
     if(function->getName() == "egalito_shadowstack_violation") return;
-    if(function->getName() == "egalito_allocate_shadow_stack_gs") return;
-    if(function->getName() == "egalito_allocate_shadow_stack_const") return;
+    if(function->getName() == "egalito_allocate_shadow_stack") return;
     if(function->getName() == "get_gs") return;
 
     if(function->getName() == "obstack_free") return;  // jne tail rec, for const ss
@@ -141,20 +138,11 @@ void ShadowStackPass::visit(Instruction *instruction) {
     }*/
 }
 
-void ShadowStackPass::pushToShadowStack(Function *function) {
-	if(mode == MODE_CONST) {
-		pushToShadowStackConst(function);
-	}
-	else {
-		pushToShadowStackGS(function);
-	}
-}
-
 #define FITS_IN_ONE_BYTE(x) ((x) < 0x80)  /* signed 1-byte operand */
 #define GET_BYTE(x, shift) static_cast<unsigned char>(((x) >> (shift*8)) & 0xff)
 #define GET_BYTES(x) GET_BYTE((x),0), GET_BYTE((x),1), GET_BYTE((x),2), GET_BYTE((x),3)
 
-void ShadowStackPass::pushToShadowStackConst(Function *function) {
+void ShadowStackPass::pushToShadowStack(Function *function) {
     ChunkAddInline ai({X86_REG_R11}, [] (unsigned int stackBytesAdded) {
         // 0:   41 53                   push   %r11
         // 2:   4c 8b 5c 24 08          mov    0x8(%rsp),%r11
@@ -183,53 +171,7 @@ void ShadowStackPass::pushToShadowStackConst(Function *function) {
     ai.insertBefore(instr1, false);
 }
 
-void ShadowStackPass::pushToShadowStackGS(Function *function) {
-    ChunkAddInline ai({X86_REG_R10, X86_REG_R11}, [] (unsigned int stackBytesAdded) {
-        /*  
-           0:   65 4c 8b 1c 25 00 00    mov    %gs:0x0,%r11
-           7:   00 00
-           9:   4d 8d 5b 08             lea    0x8(%r11),%r11
-           d:   4c 8b 14 24             mov    (%rsp),%r10
-          11:   65 4d 89 13             mov    %r10,%gs:(%r11)
-          15:   65 4c 89 1c 25 00 00    mov    %r11,%gs:0x0
-          1c:   00 00
-        */
-        auto mov1Instr = Disassemble::instruction({0x65, 0x4c, 0x8b, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00});
-        auto leaInstr = Disassemble::instruction({0x4d, 0x8d, 0x5b, 0x08});
-        Instruction *mov2Instr = nullptr;
-        if(stackBytesAdded == 0) {
-            //   18:    4c 8b 14 24             mov    (%rsp),%r10
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x14, 0x24});
-        }
-        else if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
-            //   18:    4c 8b 54 24 08          mov    0x8(%rsp),%r10
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x54, 0x24, GET_BYTE(stackBytesAdded,0)});
-        }
-        else {
-            //   1c:   4c 8b 94 24 88 00 00    mov    0x88(%rsp),%r10
-            //   23:   00 
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x94, 0x24, GET_BYTES(stackBytesAdded)});
-        }
-        auto mov3Instr = Disassemble::instruction({0x65, 0x4d, 0x89, 0x13});
-        auto mov4Instr = Disassemble::instruction({0x65, 0x4c, 0x89, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00});
-
-        return std::vector<Instruction *>{ mov1Instr, leaInstr, mov2Instr, mov3Instr, mov4Instr };
-    });
-	auto block1 = function->getChildren()->getIterable()->get(0);
-	auto instr1 = block1->getChildren()->getIterable()->get(0);
-    ai.insertBefore(instr1, false);
-}
-
 void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
-	if(mode == MODE_CONST) {
-		popFromShadowStackConst(instruction);
-	}
-	else {
-		popFromShadowStackGS(instruction);
-	}
-}
-
-void ShadowStackPass::popFromShadowStackConst(Instruction *instruction) {
     ChunkAddInline ai({X86_REG_EFLAGS, X86_REG_R11}, [this] (unsigned int stackBytesAdded) {
         /*
                                          pushfd
@@ -262,49 +204,6 @@ void ShadowStackPass::popFromShadowStackConst(Instruction *instruction) {
         jneSem->setLink(new NormalLink(violationTarget, Link::SCOPE_EXTERNAL_JUMP));
         jne->setSemantic(jneSem);
         return std::vector<Instruction *>{ movInstr, cmpInstr, jne };
-    });
-    ai.insertBefore(instruction, true);
-}
-
-void ShadowStackPass::popFromShadowStackGS(Instruction *instruction) {
-    ChunkAddInline ai({X86_REG_R10, X86_REG_R11}, [this] (unsigned int stackBytesAdded) {
-        /*
-          1f:   65 4c 8b 1c 25 00 00    mov    %gs:0x0,%r11
-          26:   00 00
-          28:   4c 8b 14 24             mov    (%rsp),%r10
-          2c:   65 4d 39 13             cmp    %r10,%gs:(%r11)
-          30:   0f 85 00 00 00 00       jne    0x36
-          36:   4d 8d 5b f8             lea    -0x8(%r11),%r11
-          3a:   65 4c 89 1c 25 00 00    mov    %r11,%gs:0x0
-          41:   00 00
-        */
-        auto mov1Instr = Disassemble::instruction({0x65, 0x4c, 0x8b, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00});
-        Instruction *mov2Instr = nullptr;
-        if(stackBytesAdded == 0) {
-            //   18:    4c 8b 14 24             mov    (%rsp),%r10
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x14, 0x24});
-        }
-        else if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
-            //   18:    4c 8b 54 24 08          mov    0x8(%rsp),%r10
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x54, 0x24, GET_BYTE(stackBytesAdded,0)});
-        }
-        else {
-            //   1c:   4c 8b 94 24 88 00 00    mov    0x88(%rsp),%r10
-            //   23:   00 
-            mov2Instr = Disassemble::instruction({0x4c, 0x8b, 0x94, 0x24, GET_BYTES(stackBytesAdded)});
-        }
-        auto cmpInstr = Disassemble::instruction({0x65, 0x4d, 0x39, 0x13});
-        // jmp instr goes here
-        auto leaInstr = Disassemble::instruction({0x4d, 0x8d, 0x5b, 0xf8});
-        auto mov3Instr = Disassemble::instruction({0x65, 0x4c, 0x89, 0x1c, 0x25, 0x00, 0x00, 0x00, 0x00});
-
-        auto jne = new Instruction();
-        auto jneSem = new ControlFlowInstruction(
-            X86_INS_JNE, jne, "\x0f\x85", "jnz", 4);
-        jneSem->setLink(new NormalLink(violationTarget, Link::SCOPE_EXTERNAL_JUMP));
-        jne->setSemantic(jneSem);
-
-        return std::vector<Instruction *>{ mov1Instr, mov2Instr, cmpInstr, jne, leaInstr, mov3Instr };
     });
     ai.insertBefore(instruction, true);
 }

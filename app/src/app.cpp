@@ -39,7 +39,7 @@ void App::processProgram() {
     auto program = egalito->getProgram();
 
     std::cout << "Adding shadow stack...\n";
-    ShadowStackPass shadowStack(ShadowStackPass::MODE_CONST);
+    ShadowStackPass shadowStack;
     program->accept(&shadowStack);
 
     // example:
