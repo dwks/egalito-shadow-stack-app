@@ -2,6 +2,7 @@
 #include <functional>
 #include <cstring>  // for std::strcmp
 #include "app.h"
+#include "shadowstack.h"
 
 #include "conductor/conductor.h"
 #include "chunk/dump.h"
@@ -34,6 +35,8 @@ void App::parse(const std::string &filename) {
 void App::processProgram() {
     auto program = egalito->getProgram();
     // ... analyze or transform the program
+
+    RUN_PASS(ShadowStackPass(), program);
 
     // example:
     std::cout << "Final parsing results:\n";
