@@ -22,7 +22,7 @@ private:
     EgalitoInterface *egalito;
 public:
     void parse(const std::string &filename);
-    void processProgram();
+    void transform();
     void generate(const std::string &output);
     AppOptions &getOptions() { return options; }
 };

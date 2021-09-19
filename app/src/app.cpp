@@ -11,7 +11,7 @@
 #include "log/temp.h"
 
 void App::parse(const std::string &filename) {
-    std::cout << "Parsing file [" << filename << "]\n";
+    std::cout << "Initializing Egalito\n";
 
     // Set logging levels according to quiet and EGALITO_DEBUG env var.
     egalito = new EgalitoInterface(/*verboseLogging=*/ options.getDebugMessages(),
@@ -25,17 +25,19 @@ void App::parse(const std::string &filename) {
         // recursively. This parse() can be called repeatedly to inject other
         // dependencies, and the recursive closure can be parsed with
         // parseRecursiveDependencies() at any later stage.
+        std::cout << "Parsing file [" << filename << "]\n";
         egalito->parse(filename, options.getRecursive());
+
+        // Add our injected code.
+        std::cout << "Injecting code from our library\n";
+        egalito->parse("libinject.so");
     }
     catch(const char *message) {
         std::cout << "Exception: " << message << std::endl;
     }
 }
 
-void App::processProgram() {
-    // ... analyze or transform the program
-
-    egalito->parse("libinject.so");
+void App::transform() {
     auto program = egalito->getProgram();
 
     std::cout << "Adding shadow stack...\n";
@@ -46,15 +48,6 @@ void App::processProgram() {
     std::cout << "Final parsing results:\n";
     for(auto module : CIter::children(program)) {
         std::cout << "    parsed Module " << module->getName() << std::endl;
-    }
-    for(auto library : CIter::children(egalito->getLibraryList())) {
-        std::cout << "    depends on Library " << library->getName()
-            << " [" << library->getResolvedPath() << "]" << std::endl;
-    }
-
-    if(program->getEntryPoint()) {
-        std::cout << "Dump of entry point:\n";
-        egalito->dump(program->getEntryPoint());
     }
 }
 
@@ -67,7 +60,7 @@ void App::generate(const std::string &output) {
 }
 
 void printUsage(const char *program) {
-    std::cout << "Egalito example app" << std::endl;
+    std::cout << "Egalito shadow stack app" << std::endl;
     std::cout << std::endl;
     std::cout << "Usage: " << program << " [-vq] input [output]" << std::endl;
     std::cout << "\t-v: be more verbose" << std::endl;
@@ -80,11 +73,6 @@ int main(int argc, char *argv[]) {
     if(argc <= 1) {
         printUsage(argv[0] ? argv[0] : "etapp");
         return 0;
-    }
-
-    if(!SettingsParser().parseEnvVar("EGALITO_DEBUG")) {
-        printUsage(argv[0]);
-        return 1;
     }
 
     struct {
@@ -115,13 +103,10 @@ int main(int argc, char *argv[]) {
             }
         }
         else {
-            // 1. Parse input.
             app.parse(arg);
 
-            // 2. Analyze or transform the program.
-            app.processProgram();
+            app.transform();
 
-            // 3. (optional) Generate a new output ELF.
             if(a+1 < argc) {
                 app.generate(argv[++a]);
             }
