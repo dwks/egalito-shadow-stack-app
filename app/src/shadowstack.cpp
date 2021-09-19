@@ -38,7 +38,7 @@ void ShadowStackPass::addStackAllocationHook(Program *program) {
     allocateFunc->accept(&switchContext);
 
     auto hook = makeStackAllocationCall(allocateFunc);
-    
+
     auto block1 = sourceFunc->getChildren()->getIterable()->get(0);
     {
         ChunkMutator m(block1, true);

@@ -6,7 +6,6 @@
 #include "shadowstack.h"
 
 #include "conductor/conductor.h"
-#include "chunk/dump.h"
 #include "pass/chunkpass.h"
 #include "log/registry.h"
 #include "log/temp.h"
@@ -28,6 +27,12 @@ void App::parse(const std::string &filename) {
         // Add our injected code.
         std::cout << "Injecting code from our library\n";
         egalito->parse("libinject.so");
+
+        // Just for debugging.
+        std::cout << "Final parsing results:\n";
+        for(auto module : CIter::children(egalito->getProgram())) {
+            std::cout << "    parsed Module " << module->getName() << std::endl;
+        }
     }
     catch(const char *message) {
         std::cout << "Exception: " << message << std::endl;
@@ -41,18 +46,11 @@ void App::transform() {
     std::cout << "Adding shadow stack...\n";
     ShadowStackPass shadowStack;
     program->accept(&shadowStack);
-
-    // example:
-    std::cout << "Final parsing results:\n";
-    for(auto module : CIter::children(program)) {
-        std::cout << "    parsed Module " << module->getName() << std::endl;
-    }
 }
 
 void App::generate(const std::string &output) {
-    // Generate output, mirrorgen or uniongen. If only one argument is
-    // given to generate(), automatically guess based on whether multiple
-    // Modules are present.
+    // Generate output executable, with all Modules combined into one
+    // (uniongen mode).
     std::cout << "Performing code generation into [" << output << "]...\n";
     egalito->generate(output);
 }
