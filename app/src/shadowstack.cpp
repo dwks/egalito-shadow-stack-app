@@ -11,42 +11,51 @@
 #include "types.h"
 
 void ShadowStackPass::visit(Program *program) {
-    auto allocateFunc = ChunkFind2(program).findFunction(
-        "egalito_allocate_shadow_stack");
-
-    if(allocateFunc) {
-        SwitchContextPass switchContext;
-        allocateFunc->accept(&switchContext);
-
-        // add call to shadow stack allocation function in __libc_start_main
-        auto call = new Instruction();
-        auto callSem = new ControlFlowInstruction(
-            X86_INS_CALL, call, "\xe8", "call", 4);
-        callSem->setLink(new NormalLink(allocateFunc, Link::SCOPE_EXTERNAL_JUMP));
-        call->setSemantic(callSem);
-        
-        {
-            auto sourceFunc = ChunkFind2(program).findFunction(
-                "__libc_start_main");
-            assert(sourceFunc && "ShadowStackPass requires libc to be present (uniongen)");
-            auto block1 = sourceFunc->getChildren()->getIterable()->get(0);
-
-            {
-                ChunkMutator m(block1, true);
-                m.prepend(call);
-            }
-        }
-    }
-
     if(auto f = dynamic_cast<Function *>(program->getEntryPoint())) {
         entryPoint = f;
     }
 
+    addStackAllocationHook(program);
     recurse(program);
 }
 
 void ShadowStackPass::visit(Module *module) {
-#ifdef ARCH_X86_64
+    this->violationTarget = makeViolationTarget(module);
+    recurse(module);
+}
+
+void ShadowStackPass::addStackAllocationHook(Program *program) {
+    // add call to shadow stack allocation function in __libc_start_main
+    auto allocateFunc = ChunkFind2(program).findFunction(
+        "egalito_allocate_shadow_stack");
+    assert(allocateFunc && "ShadowStackPass requires libinject.so to be parsed");
+
+    auto sourceFunc = ChunkFind2(program).findFunction(
+        "__libc_start_main");
+    assert(sourceFunc && "ShadowStackPass requires libc to be present (uniongen)");
+
+    SwitchContextPass switchContext;
+    allocateFunc->accept(&switchContext);
+
+    auto hook = makeStackAllocationCall(allocateFunc);
+    
+    auto block1 = sourceFunc->getChildren()->getIterable()->get(0);
+    {
+        ChunkMutator m(block1, true);
+        m.prepend(hook);
+    }
+}
+
+Instruction *ShadowStackPass::makeStackAllocationCall(Function *allocateFunc) {
+    auto call = new Instruction();
+    auto callSem = new ControlFlowInstruction(
+        X86_INS_CALL, call, "\xe8", "call", 4);
+    callSem->setLink(new NormalLink(allocateFunc, Link::SCOPE_EXTERNAL_JUMP));
+    call->setSemantic(callSem);
+    return call;
+}
+
+Function *ShadowStackPass::makeViolationTarget(Module *module) {
     auto instr = Disassemble::instruction({0x0f, 0x0b});  // ud2
     auto block = new Block();
 
@@ -60,56 +69,53 @@ void ShadowStackPass::visit(Module *module) {
     function->setParent(module->getFunctionList());
     ChunkMutator(function).append(block);
     ChunkMutator(block).append(instr);
+    return function;
+}
 
-    this->violationTarget = function;
-    recurse(module);
-#endif
+bool ShadowStackPass::isFunctionBlacklisted(Function *function) {
+    auto name = function->getName();
+
+    // Shadow stack pass uses these internally
+    if(name == "egalito_shadowstack_violation") return true;
+    if(name == "egalito_allocate_shadow_stack") return true;
+    if(name == "mmap64") return true;
+    if(name == "mmap") return true;
+
+    // Needed for initialization
+    if(name == "_start" || function == entryPoint) return true;
+    if(name == "__libc_start_main") return true;
+
+    // Needed to make long jumps work
+    if(name == "__longjmp") return true;
+    if(name == "__longjmp_chk") return true;
+
+    // mempcpy does jmp into middle of __memcpy_avx_unaligned_erms
+    if(name.find("memcpy") != std::string::npos) return true;
+
+    // memcpy does jmp into middle of __memmove_sse2_unaligned_erms
+    if(name.find("memmove") != std::string::npos) return true;
+
+    // __memset_avx2_unaligned_erms has ja, conditional tail recursion
+    if(name.find("memset") != std::string::npos) return true;
+
+    // __strncasecmp_l_avx has jne, conditional tail recursion
+    if(name.find("str") != std::string::npos) return true;
+
+    // sphinx3, function does tail recursion to itself
+    if(name == "mdef_phone_id") return true;
+
+    // jne conditional tail recursion
+    if(name == "obstack_free") return true;
+
+    return false;
 }
 
 void ShadowStackPass::visit(Function *function) {
-    if(function->getName() == "egalito_shadowstack_violation") return;
-    if(function->getName() == "egalito_allocate_shadow_stack") return;
-    if(function->getName() == "get_gs") return;
-
-    if(function->getName() == "obstack_free") return;  // jne tail rec, for const ss
-
-    if(function->getName() == "_start" || function == entryPoint) return;
-    if(function->getName() == "__libc_start_main") return;
-    if(function->getName() == "mmap64") return;
-    if(function->getName() == "mmap") return;
-    if(function->getName() == "arch_prctl") return;
-
-    // const shadow stack needs these
-    if(function->getName() == "__longjmp") return;
-    if(function->getName() == "__longjmp_chk") return;
-
-    // mempcpy does jmp into middle of this:
-    //if(function->getName() == "__memcpy_avx_unaligned_erms") return;
-    if(function->getName().find("memcpy") != std::string::npos) return;
-
-    // memcpy does jmp into middle of this:
-    //if(function->getName() == "__memmove_sse2_unaligned_erms") return;
-    if(function->getName().find("memmove") != std::string::npos) return;
-
-    // this has ja, conditional tail recursion
-    //if(function->getName() == "__memset_avx2_unaligned_erms") return;
-    if(function->getName().find("memset") != std::string::npos) return;
-
-    // blacklist all mem* functions?
-    //if(function->getName().find("mem") != std::string::npos) return;
-
-    // this has jne, conditional tail recursion
-    // __strncasecmp_l_avx
-    //if(function->getName() == "__strncasecmp_l_avx") return;
-    if(function->getName().find("str") != std::string::npos) return;
-
-    // sphinx3, function does tail recursion to itself
-    if(function->getName() == "mdef_phone_id") return;
+    if(isFunctionBlacklisted(function)) return;
 
     pushToShadowStack(function);
     recurse(function);
 }
-
 
 void ShadowStackPass::visit(Instruction *instruction) {
     auto semantic = instruction->getSemantic();
