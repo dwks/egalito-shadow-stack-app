@@ -147,10 +147,6 @@ void ShadowStackPass::visit(Instruction *instruction) {
     }*/
 }
 
-#define FITS_IN_ONE_BYTE(x) ((x) < 0x80)  /* signed 1-byte operand */
-#define GET_BYTE(x, shift) static_cast<unsigned char>(((x) >> (shift*8)) & 0xff)
-#define GET_BYTES(x) GET_BYTE((x),0), GET_BYTE((x),1), GET_BYTE((x),2), GET_BYTE((x),3)
-
 void ShadowStackPass::pushToShadowStack(Function *function) {
     ChunkAddInline ai({X86_REG_R11}, [] (unsigned int stackBytesAdded) {
         // 0:   41 53                   push   %r11
@@ -159,32 +155,13 @@ void ShadowStackPass::pushToShadowStack(Function *function) {
         // e:   ff
         // f:   41 5b                   pop    %r11
 
-#ifdef USE_KEYSTONE
         std::stringstream ss;
         ss << std::hex << std::showbase;
         ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
         const int offset = -0xb00000 + stackBytesAdded;
         ss << "mov %r11," << offset << "(%rsp)\n";
-        //std::cout << ss.str();
 
         return Reassemble::instructions(ss.str());
-#else
-        Instruction *mov1Instr = nullptr;
-        if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
-            mov1Instr = Disassemble::instruction({0x4c, 0x8b, 0x5c, 0x24, GET_BYTE(stackBytesAdded,0)});
-        } else {
-            //   5:    4c 8b 9c 24 88 00 00    mov    0x88(%rsp),%r11
-            //   c:    00 
-            mov1Instr = Disassemble::instruction({0x4c, 0x8b, 0x9c, 0x24, GET_BYTES(stackBytesAdded)});
-        }
-        Instruction *mov2Instr = nullptr;
-        {
-            unsigned int offset = -0xb00000 + stackBytesAdded;
-            mov2Instr = Disassemble::instruction({0x4c, 0x89, 0x9c, 0x24, GET_BYTES(offset)});
-        }
-
-        return std::vector<Instruction *>{ mov1Instr, mov2Instr };
-#endif
     });
 	auto block1 = function->getChildren()->getIterable()->get(0);
 	auto instr1 = block1->getChildren()->getIterable()->get(0);
@@ -203,7 +180,6 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
            15:   41 5b                   pop    %r11
                                          popfd
         */
-#ifdef USE_KEYSTONE
         std::stringstream ss;
         ss << std::hex << std::showbase;
         ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
@@ -219,33 +195,6 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
         auto instructions = Reassemble::instructions(ss.str());
         instructions.push_back(jne);
         return instructions;
-#else
-        Instruction *movInstr = nullptr;
-        if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
-            movInstr = Disassemble::instruction({0x4c, 0x8b, 0x5c, 0x24, GET_BYTE(stackBytesAdded,0)});
-        } else {
-            //   5:    4c 8b 9c 24 88 00 00    mov    0x90(%rsp),%r11
-            //   c:    00 
-            // (optional 0x80 for redzone), 0x8 for pushfd, 0x8 for push %r11
-            movInstr = Disassemble::instruction({0x4c, 0x8b, 0x9c, 0x24, GET_BYTES(stackBytesAdded)});
-        }
-        Instruction *cmpInstr = nullptr;
-        {
-            unsigned int offset = -0xb00000 + stackBytesAdded;
-            cmpInstr = Disassemble::instruction({0x4c, 0x39, 0x9c, 0x24, GET_BYTES(offset)});
-        }
-
-        auto jne = new Instruction();
-        auto jneSem = new ControlFlowInstruction(
-            X86_INS_JNE, jne, "\x0f\x85", "jnz", 4);
-        jneSem->setLink(new NormalLink(violationTarget, Link::SCOPE_EXTERNAL_JUMP));
-        jne->setSemantic(jneSem);
-        return std::vector<Instruction *>{ movInstr, cmpInstr, jne };
-#endif
     });
     ai.insertBefore(instruction, true);
 }
-
-#undef FITS_IN_ONE_BYTE
-#undef GET_BYTE
-#undef GET_BYTES

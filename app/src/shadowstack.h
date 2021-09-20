@@ -7,6 +7,10 @@
     #error "ShadowStackPass does not support this architecture"
 #endif
 
+#ifndef USE_KEYSTONE
+    #error "Please compile with keystone support"
+#endif
+
 class ShadowStackPass : public ChunkPass {
 private:
     Function *violationTarget;
