@@ -2,7 +2,7 @@
 all: deps test
 	$(MAKE) -C app
 deps:
-	$(MAKE) -C egalito
+	$(MAKE) -C egalito USE_KEYSTONE=1
 test:
 	$(MAKE) -C test
 clean:

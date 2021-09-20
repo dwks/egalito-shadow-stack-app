@@ -1,4 +1,7 @@
 #include <vector>
+#include <sstream>
+#include <iostream>
+#include <iomanip>
 #include <cassert>
 #include "shadowstack.h"
 #include "disasm/disassemble.h"
@@ -156,6 +159,16 @@ void ShadowStackPass::pushToShadowStack(Function *function) {
         // e:   ff
         // f:   41 5b                   pop    %r11
 
+#ifdef USE_KEYSTONE
+        std::stringstream ss;
+        ss << std::hex << std::showbase;
+        ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
+        const int offset = -0xb00000 + stackBytesAdded;
+        ss << "mov %r11," << offset << "(%rsp)\n";
+        //std::cout << ss.str();
+
+        return Reassemble::instructions(ss.str());
+#else
         Instruction *mov1Instr = nullptr;
         if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
             mov1Instr = Disassemble::instruction({0x4c, 0x8b, 0x5c, 0x24, GET_BYTE(stackBytesAdded,0)});
@@ -171,6 +184,7 @@ void ShadowStackPass::pushToShadowStack(Function *function) {
         }
 
         return std::vector<Instruction *>{ mov1Instr, mov2Instr };
+#endif
     });
 	auto block1 = function->getChildren()->getIterable()->get(0);
 	auto instr1 = block1->getChildren()->getIterable()->get(0);
@@ -189,6 +203,23 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
            15:   41 5b                   pop    %r11
                                          popfd
         */
+#ifdef USE_KEYSTONE
+        std::stringstream ss;
+        ss << std::hex << std::showbase;
+        ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
+        const int offset = -0xb00000 + stackBytesAdded;
+        ss << "cmp %r11," << offset << "(%rsp)\n";
+
+        auto jne = new Instruction();
+        auto jneSem = new ControlFlowInstruction(
+            X86_INS_JNE, jne, "\x0f\x85", "jnz", 4);
+        jneSem->setLink(new NormalLink(violationTarget, Link::SCOPE_EXTERNAL_JUMP));
+        jne->setSemantic(jneSem);
+
+        auto instructions = Reassemble::instructions(ss.str());
+        instructions.push_back(jne);
+        return instructions;
+#else
         Instruction *movInstr = nullptr;
         if(FITS_IN_ONE_BYTE(stackBytesAdded)) {
             movInstr = Disassemble::instruction({0x4c, 0x8b, 0x5c, 0x24, GET_BYTE(stackBytesAdded,0)});
@@ -210,6 +241,7 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
         jneSem->setLink(new NormalLink(violationTarget, Link::SCOPE_EXTERNAL_JUMP));
         jne->setSemantic(jneSem);
         return std::vector<Instruction *>{ movInstr, cmpInstr, jne };
+#endif
     });
     ai.insertBefore(instruction, true);
 }

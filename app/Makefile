@@ -1,5 +1,6 @@
 # Makefile for egalito applications
 
+USE_KEYSTONE=1
 include ../egalito/env.mk
 
 ETAPP = $(BUILDDIR)etapp
