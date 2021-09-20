@@ -26,7 +26,7 @@ void App::parse(const std::string &filename) {
 
         // Add our injected code.
         std::cout << "Injecting code from our library\n";
-        egalito->parse("libinject.so");
+        egalito->parse("../app/libinject.so");
 
         // Just for debugging.
         std::cout << "Final parsing results:\n";
