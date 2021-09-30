@@ -72,10 +72,6 @@ Function *ShadowStackPass::makeViolationTarget(Module *module) {
     // Please add a basic block with a single "ud2" instruction to the function.
     // ChunkMutator will be helpful.
 
-    auto instr = Disassemble::instruction({0x0f, 0x0b});  // ud2
-    auto block = new Block();
-    ChunkMutator(function).append(block);
-    ChunkMutator(block).append(instr);
     return function;
 }
 
@@ -164,10 +160,7 @@ void ShadowStackPass::pushToShadowStack(Function *function) {
         // Reassemble::instructions to make instructions out of strings.
 
         std::stringstream ss;
-        ss << std::hex << std::showbase;
-        ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
-        const int offset = -0xb00000 + stackBytesAdded;
-        ss << "mov %r11," << offset << "(%rsp)\n";
+        // ...
 
         return Reassemble::instructions(ss.str());
     });
@@ -192,10 +185,7 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
         // Reassemble::instructions to make instructions out of strings.
 
         std::stringstream ss;
-        ss << std::hex << std::showbase;
-        ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
-        const int offset = -0xb00000 + stackBytesAdded;
-        ss << "cmp %r11," << offset << "(%rsp)\n";
+        // ...
 
         auto jne = new Instruction();
         auto jneSem = new ControlFlowInstruction(
@@ -204,7 +194,7 @@ void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
         jne->setSemantic(jneSem);
 
         auto instructions = Reassemble::instructions(ss.str());
-        instructions.push_back(jne);
+        //instructions.push_back(jne);
         return instructions;
     });
     ai.insertBefore(instruction, true);
