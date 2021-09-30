@@ -21,7 +21,7 @@ provided, and you must add the following functionality:
 
 4. Inject the following target function to jump to for violations:
     egalito_shadowstack_violation:
-      hlt
+      ud2
 
 The various places that need code added are marked with EXERCISE, please
 grep for this. You can view the solution with "git diff solution".
