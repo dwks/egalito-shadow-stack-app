@@ -59,9 +59,6 @@ Instruction *ShadowStackPass::makeStackAllocationCall(Function *allocateFunc) {
 }
 
 Function *ShadowStackPass::makeViolationTarget(Module *module) {
-    auto instr = Disassemble::instruction({0x0f, 0x0b});  // ud2
-    auto block = new Block();
-
     auto symbol = new Symbol(0x0, 0, "egalito_shadowstack_violation",
        Symbol::TYPE_FUNC, Symbol::BIND_GLOBAL, 0, 0);
     auto function = new Function(symbol);
@@ -75,6 +72,8 @@ Function *ShadowStackPass::makeViolationTarget(Module *module) {
     // Please add a basic block with a single "ud2" instruction to the function.
     // ChunkMutator will be helpful.
 
+    auto instr = Disassemble::instruction({0x0f, 0x0b});  // ud2
+    auto block = new Block();
     ChunkMutator(function).append(block);
     ChunkMutator(block).append(instr);
     return function;
