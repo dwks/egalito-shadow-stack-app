@@ -153,17 +153,17 @@ void ShadowStackPass::visit(Instruction *instruction) {
 }
 
 void ShadowStackPass::pushToShadowStack(Function *function) {
-    // EXERCISE: Add the following instructions to each function prologue:
-    //     0:   41 53                   push   %r11
-    //     2:   4c 8b 5c 24 08          mov    0x8(%rsp),%r11
-    //     7:   4c 89 9c 24 00 00 50    mov    %r11,-0xb00000(%rsp)
-    //     e:   ff
-    //     f:   41 5b                   pop    %r11
-    // Note that ChunkAddInline automatically saves the given registers to the
-    // stack, so the push/pop is automatically generated. You can use
-    // Reassemble::instructions to make instructions out of strings.
-
     ChunkAddInline ai({X86_REG_R11}, [] (unsigned int stackBytesAdded) {
+        // EXERCISE: Add the following instructions to each function prologue:
+        //     0:   41 53                   push   %r11
+        //     2:   4c 8b 5c 24 08          mov    0x8(%rsp),%r11
+        //     7:   4c 89 9c 24 00 00 50    mov    %r11,-0xb00000(%rsp)
+        //     e:   ff
+        //     f:   41 5b                   pop    %r11
+        // Note that ChunkAddInline automatically saves the given registers to the
+        // stack, so the push/pop is automatically generated. You can use
+        // Reassemble::instructions to make instructions out of strings.
+
         std::stringstream ss;
         ss << std::hex << std::showbase;
         ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
@@ -178,19 +178,20 @@ void ShadowStackPass::pushToShadowStack(Function *function) {
 }
 
 void ShadowStackPass::popFromShadowStack(Instruction *instruction) {
-    // EXERCISE: Add the following instructions to each function epilogue:
-    //                                   pushfd
-    //      0:   41 53                   push   %r11
-    //      2:   4c 8b 5c 24 08          mov    0x8(%rsp),%r11
-    //      7:   4c 39 9c 24 00 00 50    cmp    %r11,-0xb00000(%rsp)
-    //      e:   ff
-    //      f:   0f 85 00 00 00 00       jne    0x15
-    //     15:   41 5b                   pop    %r11
-    //                                   popfd
-    // Note that ChunkAddInline automatically saves the given registers to the
-    // stack, so the push/pop is automatically generated. You can use
-    // Reassemble::instructions to make instructions out of strings.
     ChunkAddInline ai({X86_REG_EFLAGS, X86_REG_R11}, [this] (unsigned int stackBytesAdded) {
+        // EXERCISE: Add the following instructions to each function epilogue:
+        //                                   pushfd
+        //      0:   41 53                   push   %r11
+        //      2:   4c 8b 5c 24 08          mov    0x8(%rsp),%r11
+        //      7:   4c 39 9c 24 00 00 50    cmp    %r11,-0xb00000(%rsp)
+        //      e:   ff
+        //      f:   0f 85 00 00 00 00       jne    0x15
+        //     15:   41 5b                   pop    %r11
+        //                                   popfd
+        // Note that ChunkAddInline automatically saves the given registers to the
+        // stack, so the push/pop is automatically generated. You can use
+        // Reassemble::instructions to make instructions out of strings.
+
         std::stringstream ss;
         ss << std::hex << std::showbase;
         ss << "mov " << stackBytesAdded << "(%rsp), %r11\n";
