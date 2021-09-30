@@ -11,7 +11,7 @@ void egalito_allocate_shadow_stack(void) {
     //
     // This function is injected by compiling it to a separate shared library.
     int dummyStackVar = 0xdeadbeef;
-    void *dummyStackAddr = (void *)((((unsigned long)&dummyStackVar) 
+    void *dummyStackAddr = (void *)((((unsigned long)&dummyStackVar)
         & ~0xfff) - 0x1000 - 2*SHADOW_STACK_SIZE);
     void *memory = mmap(dummyStackAddr,
         SHADOW_STACK_SIZE,
